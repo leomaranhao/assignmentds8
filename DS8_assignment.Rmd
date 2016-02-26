@@ -1,0 +1,168 @@
+---
+keep_md: yes
+output:
+  html_document: default
+  pdf_document:
+    highlight: zenburn
+    latex_engine: xelatex
+---
+
+# Building a Predictive Model for Human Activity Recognition
+
+### Practical Machine Learning - Course Project
+  
+Author: Leo Maranhao de Mello  
+Date: February 23, 2016  
+  
+## Synopsis
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. 
+
+One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it.
+
+Six young health participants were asked to perform one set of 10 repetitions of the Unilateral Dumbbell Biceps Curl in five different fashions: exactly according to the specification (Class A), throwing the elbows to the front (Class B), lifting the dumbbell only halfway (Class C), lowering the dumbbell only halfway (Class D) and throwing the hips to the front (Class E).
+
+Class A corresponds to the specified execution of the exercise, while the other 4 classes correspond to common mistakes. 
+
+The goal of the project is to predict the manner in which 6 participants performed some exercise, classified by the "classe" variable in the training set. The prediction model will also be used to predict 20 different test cases.
+
+The dataset used come from this source: http://groupware.les.inf.puc-rio.br/har 
+
+To implement the predictive model we will combine predictors. We will be using gbm, random forest and linear dscriminant analysis.
+
+## Exploratory Data Analysis and Basic Summary
+```{r libraries_load, include=FALSE}
+library(caret)
+library(knitr)
+library(randomForest)
+library(knitr)
+```
+
+After downloading the files from the provided links they were loaded into two datasets:
+```{r data_loading, cache=TRUE}
+training <- read.csv("pml-training.csv")
+testing <- read.csv("pml-testing.csv")
+
+dim(training)
+dim(testing)
+```
+
+As we can see there a big number of predictors.  The number of predictors can be reduced removing the ones with great number of NA, the ones with Near Zero variance (NZV) and the ID variables as well.
+
+```{r data_cleaning, cache=TRUE}
+trainingNzv <- training[,!nearZeroVar(training, saveMetrics = TRUE)$nzv]
+testingNzv <- testing[,!nearZeroVar(training, saveMetrics = TRUE)$nzv]
+
+colNa <- colSums(is.na(trainingNzv)) < 1
+
+trainingNzvNa <- trainingNzv[,colNa]
+testingNzvNa <- testingNzv[,colNa]
+
+trainingNzvNa <- trainingNzvNa[,-c(1:6)]
+testingNzvNa <- testingNzvNa[,-c(1:6)]
+
+dim(trainingNzvNa)
+dim(testingNzvNa)
+```
+
+## Predictive Model Building
+
+The first thing to be done is to separate the training dataset (trainingNzvNa) above into two datasets. One to do the training of the model and another to evaluate the accuracy of the predictive model.
+
+```{r data_split, cache=TRUE}
+set.seed(123)
+
+inTrain <- createDataPartition(y=trainingNzvNa$classe, p=0.7, list=FALSE)
+
+trainingPart <- trainingNzvNa[inTrain,]
+testingPart <- trainingNzvNa[-inTrain,]
+```
+
+Three methods will be applied to model the classifications (with the trainingPart dataset). These 3 methods will be combined using a random forest to build the final model that will be used for the quiz predictions. The methods are: Generalized Boosted Model, Random Forests and Linear Discriminant Analysis.
+
+A Confusion Matrix is plotted at the end, using the testingPart dataset, created above, to better evaluate the accuracy of the models, using an out of sample data.
+
+### Generalized Boosted Model
+
+```{r gbm, cache=TRUE}
+set.seed(12345)
+modelFit <- train(classe ~ ., data=trainingPart, method = "gbm", verbose=FALSE)
+```
+
+### Random Forest
+
+```{r rf, cache=TRUE}
+set.seed(12345)
+modelFitRf <- train(classe ~ ., data=trainingPart, method = "rf", 
+                    trControl = trainControl(method="repeatedcv"), 
+                    number = 10, repeats = 10)
+```
+
+### Linear Discriminant Analysis
+
+```{r lda, cache=TRUE}
+set.seed(12345)
+modelFitLda <- train(classe ~ ., data=trainingPart, method = "lda")
+```
+
+### Combining the Models
+
+```{r combo, cache=TRUE}
+trainPred <- predict(modelFit, newdata = trainingPart)
+trainPredRf <- predict(modelFitRf, newdata = trainingPart)
+trainPredLda <- predict(modelFitLda, newdata = trainingPart)
+
+comboDf <- data.frame(trainPred, 
+                      trainPredRf,
+                      trainPredLda,
+                      classe = trainingPart$classe)
+
+set.seed(12345)
+modelFitCombo <- train(classe ~ ., data=comboDf, method = "rf", 
+                       trControl = trainControl(method="repeatedcv"), 
+                       number = 10, repeats = 10)
+```
+
+### Evaluating Accuracy
+
+```{r evaluation, cache=TRUE}
+testPred <- predict(modelFit, newdata = testingPart)
+testPredRf <- predict(modelFitRf, newdata = testingPart)
+testPredLda <- predict(modelFitLda, newdata = testingPart)
+
+testComboDf <- data.frame(trainPred = testPred, 
+                          trainPredRf = testPredRf, 
+                          trainPredLda = testPredLda,
+                          classe = testingPart$classe)
+
+testPredCombo <- predict(modelFitCombo, newdata = testComboDf)
+
+cat("GBM")
+confusionMatrix(testPred, testingPart$classe)
+
+cat("RF")
+confusionMatrix(testPredRf, testingPart$classe)
+
+cat("Lda")
+confusionMatrix(testPredLda, testingPart$classe)
+
+cat("Combo")
+confusionMatrix(testPredCombo, testingPart$classe)
+```
+
+### Prediction of 20 Different Cases
+
+```{r prediction, cache=TRUE}
+testResult <- predict(modelFit, newdata = testingNzvNa)
+testResultRf <- predict(modelFitRf, newdata = testingNzvNa)
+testResultLda <- predict(modelFitLda, newdata = testingNzvNa)
+
+testNzvNaComboDf <- data.frame(trainPred = testResult, 
+                               trainPredRf = testResultRf, 
+                               trainPredLda = testResultLda, 
+                               classe = rep(0,20))
+
+testResulCombo <- predict(modelFitCombo, newdata = testNzvNaComboDf)
+
+testResulCombo
+```
