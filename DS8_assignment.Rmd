@@ -12,7 +12,7 @@ output:
 ### Practical Machine Learning - Course Project
   
 Author: Leo Maranhao de Mello  
-Date: February 23, 2016  
+Date: February 26, 2016  
   
 ## Synopsis
 
@@ -33,7 +33,7 @@ To implement the predictive model we will combine predictors. We will be using g
 ## Exploratory Data Analysis and Basic Summary
 ```{r libraries_load, include=FALSE}
 library(caret)
-library(knitr)
+library(gbm)
 library(randomForest)
 library(knitr)
 ```
@@ -78,7 +78,7 @@ trainingPart <- trainingNzvNa[inTrain,]
 testingPart <- trainingNzvNa[-inTrain,]
 ```
 
-Three methods will be applied to model the classifications (with the trainingPart dataset). These 3 methods will be combined using a random forest to build the final model that will be used for the quiz predictions. The methods are: Generalized Boosted Model, Random Forests and Linear Discriminant Analysis.
+Three methods will be used to model the classifications (with the trainingPart dataset). These 3 methods will be combined using a random forest to build the final model that will be used for the quiz predictions. The methods are: Generalized Boosted Model, Random Forests and Linear Discriminant Analysis. All methods will be using cross-validation with 10 folds.
 
 A Confusion Matrix is plotted at the end, using the testingPart dataset, created above, to better evaluate the accuracy of the models, using an out of sample data.
 
@@ -86,7 +86,11 @@ A Confusion Matrix is plotted at the end, using the testingPart dataset, created
 
 ```{r gbm, cache=TRUE}
 set.seed(12345)
-modelFit <- train(classe ~ ., data=trainingPart, method = "gbm", verbose=FALSE)
+modelFit <- train(classe ~ ., data=trainingPart, method = "gbm",
+                  verbose=FALSE, 
+                  trControl = trainControl(method="cv", number=10))
+
+plot(modelFit)
 ```
 
 ### Random Forest
@@ -94,15 +98,17 @@ modelFit <- train(classe ~ ., data=trainingPart, method = "gbm", verbose=FALSE)
 ```{r rf, cache=TRUE}
 set.seed(12345)
 modelFitRf <- train(classe ~ ., data=trainingPart, method = "rf", 
-                    trControl = trainControl(method="repeatedcv"), 
-                    number = 10, repeats = 10)
+                    trControl = trainControl(method="cv", number=10))
+
+plot(modelFitRf)
 ```
 
 ### Linear Discriminant Analysis
 
 ```{r lda, cache=TRUE}
 set.seed(12345)
-modelFitLda <- train(classe ~ ., data=trainingPart, method = "lda")
+modelFitLda <- train(classe ~ ., data=trainingPart, method = "lda",
+                     trControl = trainControl(method="cv", number=10))
 ```
 
 ### Combining the Models
@@ -119,11 +125,10 @@ comboDf <- data.frame(trainPred,
 
 set.seed(12345)
 modelFitCombo <- train(classe ~ ., data=comboDf, method = "rf", 
-                       trControl = trainControl(method="repeatedcv"), 
-                       number = 10, repeats = 10)
+                       trControl = trainControl(method="cv", number=10))
 ```
 
-### Evaluating Accuracy
+### Evaluating Accuracy and Out of Sample Error (using the out of sample dataset - testingPart)
 
 ```{r evaluation, cache=TRUE}
 testPred <- predict(modelFit, newdata = testingPart)
@@ -148,7 +153,11 @@ confusionMatrix(testPredLda, testingPart$classe)
 
 cat("Combo")
 confusionMatrix(testPredCombo, testingPart$classe)
+
+modelFitCombo$finalModel
 ```
+
+As we can see the model gives an out of sample accuracy of 99.24% and an estimated out of sample error of 0%.
 
 ### Prediction of 20 Different Cases
 
